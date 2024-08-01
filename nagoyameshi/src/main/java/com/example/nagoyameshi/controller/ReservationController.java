@@ -24,24 +24,32 @@ import com.example.nagoyameshi.repository.ReservationRepository;
 import com.example.nagoyameshi.repository.ShopeRepository;
 import com.example.nagoyameshi.security.UserDetailsImpl;
 import com.example.nagoyameshi.service.ReservationService;
+import com.example.nagoyameshi.service.StripeService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 @Controller
 public class ReservationController {
 	private final ReservationRepository reservationRepository;
 	private final ShopeRepository shopeRepository;
 	private final ReservationService reservationService;
+	private final StripeService stripeService;
 	
-	public ReservationController(ReservationRepository reservationRepository,ShopeRepository shopeRepository,ReservationService reservationService) {
+	public ReservationController(ReservationRepository reservationRepository,ShopeRepository shopeRepository,ReservationService reservationService,StripeService stripeService) {
 		this.reservationRepository = reservationRepository;
 		this.shopeRepository = shopeRepository;
 		this.reservationService = reservationService;
+		this.stripeService = stripeService;
 	}
 	
 	@GetMapping("/reservations")
 	public String index(@AuthenticationPrincipal UserDetailsImpl userDetailsImpl, @PageableDefault(page = 0, size = 10, sort = "id", direction = Direction.ASC) Pageable pageable, Model model) {
 		Member member = userDetailsImpl.getMember();
 		Page<Reservation> reservationPage = reservationRepository.findByMemberOrderByCreatedAtDesc(member, pageable);
+		/*String reserved = (String)model.getAttribute("reserved");
+		System.out.println("reserved" + "予約を完了しました");
 		
+		*redirectAttributes.addFlashAttribute("reserved", true);*/
 		model.addAttribute("reservationPage", reservationPage);
 		
 		return "reservations/index";
@@ -88,6 +96,7 @@ public class ReservationController {
 	public String confirm(@PathVariable(name = "id") Integer id,
 						   @ModelAttribute ReservationInputForm reservationInputForm,
 						   @AuthenticationPrincipal UserDetailsImpl userDetailsImpl,
+						   HttpServletRequest httpServletRequest,
 						   Model model) {
 		Shope shope = shopeRepository.getReferenceById(id);
 		Member member = userDetailsImpl.getMember();
@@ -98,8 +107,11 @@ public class ReservationController {
 		
 		ReservationRegisterForm  reservationRegisterForm = new ReservationRegisterForm(shope.getId(),member.getId(),fromReservationDate,fromReservationTime,reservationInputForm.getNumberOfPeople());
 		
+		String sessionId = stripeService.createStripeSession(shope.getName(), reservationRegisterForm, httpServletRequest);
+		
 		model.addAttribute("shope", shope);
 		model.addAttribute("reservationRegisterForm", reservationRegisterForm);
+		model.addAttribute("sessionId", sessionId);
 		
 		return "reservations/confirm";
 	}
@@ -108,15 +120,22 @@ public class ReservationController {
 	public String create(@ModelAttribute ReservationRegisterForm  reservationRegisterForm, RedirectAttributes redirectAttributes,Model model) {
 		 try {
 	            reservationService.create(reservationRegisterForm);
+	            redirectAttributes.addFlashAttribute("reserved", true);
 	        } catch (IllegalArgumentException e) {
 	            Shope shope = shopeRepository.getReferenceById(reservationRegisterForm.getShopeId());
 	            model.addAttribute("shope", shope);
 	            model.addAttribute("errorMessage", e.getMessage());
 	            return "reservations/confirm";
+	        }catch(Exception e) {
+	        	// catch any other general exceptions
+	            model.addAttribute("errorMessage", "予約の確定に失敗しました。再びお試しください。");
+	            return "reservations/confirm";
 	        }
 		
-		redirectAttributes.addFlashAttribute("reserved", true);
+		
 		return "redirect:/reservations";
 	}
+	
+	
 }
 

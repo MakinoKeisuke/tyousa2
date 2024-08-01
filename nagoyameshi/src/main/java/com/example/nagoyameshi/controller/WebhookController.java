@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.nagoyameshi.service.StripeService;
+import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
 import com.stripe.net.Webhook;
@@ -15,32 +17,33 @@ import com.stripe.net.Webhook;
 @RestController
 public class WebhookController {
 	
-	@Value("${stripe.webhook.secret}")
-    private String endpointSecret;
+	private final StripeService stripeService;
+	 
+    @Value("${stripe.api-key}")
+    private String stripeApiKey;
 
-    @PostMapping("/webhook")
-    public ResponseEntity<String> handleStripeEvent(
-            @RequestBody String payload,
-            @RequestHeader("Stripe-Signature") String sigHeader) {
+    @Value("${stripe.webhook-secret}")
+    private String webhookSecret;
 
-        Event event;
+    public WebhookController(StripeService stripeService) {
+        this.stripeService = stripeService;
+    }
+
+    @PostMapping("/stripe/webhook")
+    public ResponseEntity<String> webhook(@RequestBody String payload, @RequestHeader("Stripe-Signature") String sigHeader) {
+        Stripe.apiKey = stripeApiKey;
+        Event event = null;
 
         try {
-            event = Webhook.constructEvent(
-                    payload, sigHeader, endpointSecret
-            );
+            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
         } catch (SignatureVerificationException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
 
-        // eventの種類に応じて処理を実装します
-        switch (event.getType()) {
-            case "invoice.payment_succeeded":
-                // 支払い成功時の処理を追加
-                break;
-            // ほかのイベントタイプも処理
+        if ("checkout.session.completed".equals(event.getType())) {
+            stripeService.processSessionCompleted(event);
         }
 
-        return ResponseEntity.ok().build();
+        return new ResponseEntity<>("Success", HttpStatus.OK);
     }
 }

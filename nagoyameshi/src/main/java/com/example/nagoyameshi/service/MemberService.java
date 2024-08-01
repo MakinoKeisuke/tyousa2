@@ -1,8 +1,13 @@
 package com.example.nagoyameshi.service;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -112,5 +117,63 @@ public class MemberService {
 		Member currentMember = memberRepository.getReferenceById(memberEditForm.getId());
 		return !memberEditForm.getEmail().equals(currentMember.getEmail());
 	}
+	
+	@Transactional
+    public void updateRole(Map<String, String> paymentIntentObject) {
+        String memberId = paymentIntentObject.get("memebrId");
+        //findById(Long.parseLong(memberId))
+        Member user = memberRepository.findById(Long.parseLong(memberId))
+                .orElseThrow(() -> new RuntimeException("指定されたユーザーが見つかりません。"));
+
+        String roleName = paymentIntentObject.get("roleName");
+
+        Role role = roleRepository.findByName(roleName);
+        user.setRole(role);
+
+        // ユーザーを保存
+        memberRepository.save(user);
+
+        // ロールが変更されたので、セッションを無効化して再ログインさせる
+        refreshAuthenticationByRole(roleName);
+    }
+
+	public void update(Map<String, String> paymentIntentObject) {
+		// paymentIntentObjectから必要な情報を取得
+        String memberIdStr = paymentIntentObject.get("memberId");
+        Long memberId = Long.parseLong(memberIdStr);
+
+        String roleName = paymentIntentObject.get("roleName");
+
+        // 会員を取得
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new RuntimeException("指定された会員が見つかりません"));
+
+        // 役割を取得
+        Role role = roleRepository.findByName(roleName);
+        if (role == null) {
+            throw new RuntimeException("指定された役割が見つかりません");
+        }
+
+        // 役割を更新
+        member.setRole(role);
+        memberRepository.save(member);
+
+        // セキュリティコンテキストを更新
+        refreshAuthenticationByRole(roleName);
+    }
+
+    public void refreshAuthenticationByRole(String newRole) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority(newRole));
+        Authentication newAuth = new UsernamePasswordAuthenticationToken(authentication.getPrincipal(), authentication.getCredentials(), authorities);
+
+        SecurityContextHolder.getContext().setAuthentication(newAuth);
+    }
+
+		
+	
+	
 	
 }
